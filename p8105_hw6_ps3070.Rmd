@@ -36,8 +36,6 @@ birthweight = read_csv(file = "./data/birthweight.csv") %>%
          babysex = as.factor(babysex),
          frace = as.factor(frace),
          mrace = as.factor(mrace),
-         frace = relevel(frace, "White"),
-         mrace = relevel(frace, "White"),
          malform = as.factor(malform)
          )
 ```
@@ -72,10 +70,58 @@ bwt1 =
   lm(bwt ~ blength + gaweeks, data = birthweight)
 ```
 
-#### Model 2: One using head circumference, length, sex, and all interactions (including the three-way interaction) between these
+**Model 2: One using head circumference, length, sex, and all interactions (including the three-way interaction) between these**
 
 ```{r model 2, message=FALSE, warning=FALSE}
 bwt2 =
   lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + blength*blength*babysex, data = birthweight)
+```
+
+
+Next, I produced RMSE density plots for each:
+
+```{r density, message=FALSE, warning=FALSE}
+cv = crossv_mc(birthweight, 100) 
+
+cv = cv %>% 
+  mutate(base  = map(train, ~lm(bwt ~ babysex + gaweeks + blength + mheight + smoken, data = .x)),
+         model1  = map(train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+         model2  = map(train, ~lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + blength*blength*babysex, data = .x))
+         ) %>% 
+  mutate(rmse_base = map2_dbl(base, test, ~rmse(model = .x, data = .y)),
+         rmse_1 = map2_dbl(model1, test, ~rmse(model = .x, data = .y)),
+         rmse_2 = map2_dbl(model2, test, ~rmse(model = .x, data = .y)))
+
+cv %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") %>% 
+  mutate(model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse, color = model)) + 
+  geom_violin()
+```
+
+Based on the violin plot above, model 2 appears to be the best because its mean squared error (MSE) is lowest among the models. Model 2 is the model containing interaction terms.
+
+
+
+### Problem 2
+
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+
 ```
 
