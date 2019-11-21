@@ -122,6 +122,68 @@ weather_df =
     tmin = tmin / 10,
     tmax = tmax / 10) %>%
   select(name, id, everything())
-
 ```
 
+
+Simple linear regression with tmax as response, tmin as predictor.
+
+  * Use 5000 bootstrap samples
+  * Produce estimates of r^2 and log(β0∗β1) for each sample
+
+```{r}
+set.seed(10)
+
+boot_fx = function(df) {
+  
+  sample_frac(df, size = 0.5, replace = TRUE)
+  
+}
+
+boot_df = tibble(
+  number = 1:5000,
+  strap = rerun(5000, boot_fx(weather_df))
+  )
+
+#log
+result_df = boot_df %>% 
+  mutate(model = map(strap, ~lm(tmax ~ tmin, data = .x)),
+         results = map(model, broom::tidy)
+  ) %>% 
+  janitor::clean_names() %>%
+  unnest(results) %>%
+  select(number, model:estimate) %>% 
+  pivot_wider(
+    names_from = term,
+    values_from = estimate) %>%
+  rename("(Intercept)" = intercept) %>% 
+  mutate(log_int_tmin = log(intercept*tmin))
+
+#r^2
+r2_df = result_df %>%
+  mutate(model_fit = map(model, broom::glance)) %>%
+  unnest(model_fit) %>%
+  select(number:r.squared) %>%
+  janitor::clean_names()
+```
+
+Plots:
+```{r plots, message=FALSE, warning=FALSE}
+result_df %>% 
+  ggplot(aes(x = log_int_tmin)) +
+  geom_histogram()
+
+r2_df %>%
+  ggplot(aes(x = r.squared)) +
+  geom_histogram()
+```
+
+Distributions normal
+
+Median log: `r round(quantile(pull(results_df, log_int_tmin), probs = 0.5), digits=2)`
+
+Median r2: `r round(mean(pull(results_df, r.squared)), digits=2)`.
+
+
+log CI: `r round(quantile(pull(results_df, log_int_tmin), probs = c(0.025,0.975)), digits = 2)`
+
+log r2: `r round(quantile(pull(results_df, r.squared), probs = c(0.025,0.975)), digits = 2)`
