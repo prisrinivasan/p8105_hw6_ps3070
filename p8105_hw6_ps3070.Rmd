@@ -2,3 +2,80 @@
 title: "p8105_hw6_ps3070"
 output: github_document
 ---
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(readxl)
+library(knitr)
+library(modelr)
+library(p8105.datasets)
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, out.width = "90%")
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+```
+
+### Problem 1
+
+
+```{r load & clean, message=FALSE, warning=FALSE}
+birthweight = read_csv(file = "./data/birthweight.csv") %>%
+  janitor::clean_names() %>% 
+  mutate(babysex = recode(babysex, "1" = "male", "2" = "female"),
+         frace = recode(frace, "1" = "White", "2" = "Black", "3" = "Asian", "4" = "Puerto Rican", "8" = "Other", "9" = "Unknown"),
+         mrace = recode(mrace, "1" = "White", "2" = "Black", "3" = "Asian", "4" = "Puerto Rican", "8" = "Other", "9" = "Unknown"),
+         malform = recode(malform, "0" = "absent", "1" = "present"),
+         babysex = as.factor(babysex),
+         frace = as.factor(frace),
+         mrace = as.factor(mrace),
+         frace = relevel(frace, "White"),
+         mrace = relevel(frace, "White"),
+         malform = as.factor(malform)
+         )
+```
+
+```{r missing, message=FALSE, warning=FALSE}
+birthweight %>% 
+  map_df(~sum(is.na(.)))
+```
+There is no missing data in the dataset.
+
+### Regression model
+
+The outcome is continuous, so I will use a linear regression model.
+
+```{r linear model, message=FALSE, warning=FALSE}
+bwt_base = lm(bwt ~ babysex + gaweeks + blength + mheight + smoken, data = birthweight) #linear model
+
+bwt_model = modelr::add_residuals(birthweight, bwt_base) #residuals
+bwt_model = modelr::add_predictions(bwt_model, bwt_base)
+
+bwt_model %>%
+  ggplot(aes(x = pred, y = resid, color = resid)) +
+  geom_point(alpha = 0.5)
+```
+
+### Comparing model to two others
+
+**Model 1: One using length at birth and gestational age as predictors (main effects only)**
+
+```{r model 1, message=FALSE, warning=FALSE}
+bwt1 =
+  lm(bwt ~ blength + gaweeks, data = birthweight)
+```
+
+#### Model 2: One using head circumference, length, sex, and all interactions (including the three-way interaction) between these
+
+```{r model 2, message=FALSE, warning=FALSE}
+bwt2 =
+  lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + blength*blength*babysex, data = birthweight)
+```
+
