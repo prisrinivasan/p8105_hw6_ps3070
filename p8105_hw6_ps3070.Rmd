@@ -1,7 +1,11 @@
 ---
 title: "p8105_hw6_ps3070"
 output: github_document
+editor_options: 
+  chunk_output_type: inline
 ---
+
+Loading libraries:
 
 ```{r, message=FALSE, warning=FALSE}
 library(tidyverse)
@@ -10,6 +14,7 @@ library(knitr)
 library(modelr)
 library(p8105.datasets)
 library(MASS)
+library(patchwork)
 
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, out.width = "90%")
 
@@ -26,6 +31,7 @@ theme_set(theme_minimal() + theme(legend.position = "bottom"))
 
 ### Problem 1
 
+First, I will clean the birthweight dataset:
 
 ```{r load & clean, message=FALSE, warning=FALSE}
 birthweight = read_csv(file = "./data/birthweight.csv") %>%
@@ -54,19 +60,21 @@ birthweight = read_csv(file = "./data/birthweight.csv") %>%
          )
 ```
 
+Now I will check for missing values:
 
 ```{r missing, message=FALSE, warning=FALSE}
 birthweight %>% 
   map_df(~sum(is.na(.))) %>% 
   knitr::kable(format = "html", caption = "Missing Values")
 ```
+
 There is no missing data in the dataset.
 
 ### Regression model
 
 The outcome is continuous, so I will use a linear regression model.
 
-Using stepwise selection, I tested what variables are associated with `bwt` below:
+Using stepwise selection, I tested what variables are associated with `bwt` below and set the seed for reproducibility:
 
 ```{r, message=FALSE, warning=FALSE}
 set.seed(123)
@@ -75,6 +83,7 @@ bwt_aic = stepAIC(bwt1, direction = "both", trace = FALSE)
 ```
 
 Plotting residuals below:
+
 ```{r residual plots, message=FALSE, warning=FALSE}
 bwt_model = modelr::add_residuals(birthweight, bwt_aic) #residuals
 bwt_model = modelr::add_predictions(bwt_model, bwt_aic)
@@ -103,6 +112,7 @@ bwt2 =
   lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + blength*blength*babysex, data = birthweight)
 ```
 
+**Cross-validation**
 
 Next, I produced RMSE density plots for each:
 
@@ -140,7 +150,6 @@ Selected model:
 y = $\beta_0$ + $\beta_1$ babysex + $\beta_2$ bhead + $\beta_3$ blength + $\beta_4$ delwt + $\beta_5$ fincome + $\beta_6$ gaweeks + $\beta_7$ meight + $\beta_8$ momage + $\beta_9$ mrace + $\beta_10$ parity + $\beta_11$ ppwt + $\beta_12$ smoken
 
 
-
 ### Problem 2
 
 ```{r, message=FALSE, warning=FALSE}
@@ -157,11 +166,10 @@ weather_df =
   dplyr::select(name, id, everything())
 ```
 
+Below is a simple linear regression with tmax as response and tmin as predictor.
 
-Simple linear regression with tmax as response, tmin as predictor.
-
-  * Use 5000 bootstrap samples
-  * Produce estimates of r^2 and log(β0∗β1) for each sample
+  * Using 5000 bootstrap samples
+  * Producing estimates of r^2 and log(β0∗β1) for each sample
 
 ```{r, message=FALSE, warning=FALSE}
 set.seed(10)
@@ -200,32 +208,29 @@ r2_df = result_df %>%
 
 Plots:
 ```{r plots, message=FALSE, warning=FALSE}
-result_df %>% 
+log_plot = result_df %>% 
   ggplot(aes(x = log_int_tmin)) +
-  geom_density() + 
+  geom_histogram(binwidth = .003) +
+  geom_density() +
   labs(
     x = "Log of Intercept*Beta1",
     y = "Density",
-    title = "Distribution of Log(Intercept*Beta1) Across Samples"
+    title = "Log(Int*Beta1) Distribution in Sample"
   )
-  
 
-r2_df %>%
+r2_plot = r2_df %>%
   ggplot(aes(x = r_squared)) +
+  geom_histogram(aes(color = r_squared), binwidth = .001) +
   geom_density() +
   labs(
     x = "R-Squared",
     y = "Density",
-    title = "Distribution of R-Squared Across Samples"
+    title = "R-Squared Distribution in Sample"
   )
+
+log_plot + r2_plot
 ```
 
 The distribution of log of Intercept x Beta 1 Hat and $r^2$ look close to a normal distribution. The distribution of log of Intercept x Beta 1 Hat looks fairly normal but very slightly left-skewed. The $r^2$ distribution is slightly more left skewed. The difference may be because of a log transformation in the Intercept x Beta 1 Hat plot.
 
-The 95% confidence interval for the log data is (`r round(quantile(pull(result_df, log_int_tmin), probs = c(0.025,0.975)), digits = 2)`). The 95% confidence interval for the $r^2$ is (`r round(quantile(pull(result_df, log_int_tmin), probs = c(0.025,0.975)), digits = 2)`). Since the null value of zero is not within either CI, we are 95% confident that the true values for both lie in these ranges based on this sample. 
-
-Other information:
-
-Log Median: `r round(quantile(pull(result_df, log_int_tmin), probs = 0.5), digits=2)`
-
-$r^2$ Median: `r round(mean(pull(r2_df, r_squared)), digits=2)`
+The 95% confidence interval for the log data is (`r round(quantile(pull(result_df, log_int_tmin), probs = c(0.025,0.975)), digits = 2)`). The 95% confidence interval for the $r^2$ is (`r round(quantile(pull(result_df, log_int_tmin), probs = c(0.025,0.975)), digits = 2)`). Since the null value of zero is not within either CI, we are 95% confident that the true values for both lie in these ranges based on this sample. The median for log(Intercept x Beta 1 Hat) is `r round(quantile(pull(result_df, log_int_tmin), probs = 0.5), digits=2)`, and the $r^2$ median is `r round(mean(pull(r2_df, r_squared)), digits=2)`.
