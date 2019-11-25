@@ -9,6 +9,7 @@ library(readxl)
 library(knitr)
 library(modelr)
 library(p8105.datasets)
+library(MASS)
 
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, out.width = "90%")
 
@@ -29,10 +30,23 @@ theme_set(theme_minimal() + theme(legend.position = "bottom"))
 ```{r load & clean, message=FALSE, warning=FALSE}
 birthweight = read_csv(file = "./data/birthweight.csv") %>%
   janitor::clean_names() %>% 
-  mutate(babysex = recode(babysex, "1" = "male", "2" = "female"),
-         frace = recode(frace, "1" = "White", "2" = "Black", "3" = "Asian", "4" = "Puerto Rican", "8" = "Other", "9" = "Unknown"),
-         mrace = recode(mrace, "1" = "White", "2" = "Black", "3" = "Asian", "4" = "Puerto Rican", "8" = "Other", "9" = "Unknown"),
-         malform = recode(malform, "0" = "absent", "1" = "present"),
+  mutate(babysex = recode(babysex, "1" = "male",
+                          "2" = "female"),
+         frace = recode(frace, "1" = "White",
+                        "2" = "Black",
+                        "3" = "Asian",
+                        "4" = "Puerto Rican",
+                        "8" = "Other",
+                        "9" = "Unknown"),
+         mrace = recode(mrace,
+                        "1" = "White",
+                        "2" = "Black",
+                        "3" = "Asian",
+                        "4" = "Puerto Rican",
+                        "8" = "Other",
+                        "9" = "Unknown"),
+         malform = recode(malform, "0" = "absent",
+                          "1" = "present"),
          babysex = as.factor(babysex),
          frace = as.factor(frace),
          mrace = as.factor(mrace),
@@ -40,9 +54,11 @@ birthweight = read_csv(file = "./data/birthweight.csv") %>%
          )
 ```
 
+
 ```{r missing, message=FALSE, warning=FALSE}
 birthweight %>% 
-  map_df(~sum(is.na(.)))
+  map_df(~sum(is.na(.))) %>% 
+  knitr::kable(format = "html", caption = "Missing Values")
 ```
 There is no missing data in the dataset.
 
@@ -50,15 +66,25 @@ There is no missing data in the dataset.
 
 The outcome is continuous, so I will use a linear regression model.
 
-```{r linear model, message=FALSE, warning=FALSE}
-bwt_base = lm(bwt ~ babysex + gaweeks + blength + mheight + smoken, data = birthweight) #linear model
+Using stepwise selection, I tested what variables are associated with `bwt` below:
 
-bwt_model = modelr::add_residuals(birthweight, bwt_base) #residuals
-bwt_model = modelr::add_predictions(bwt_model, bwt_base)
+```{r, message=FALSE, warning=FALSE}
+set.seed(123)
+bwt1 = lm(bwt ~., data = birthweight)
+bwt_aic = stepAIC(bwt1, direction = "both", trace = FALSE) 
+```
+
+Plotting residuals below:
+```{r residual plots, message=FALSE, warning=FALSE}
+bwt_model = modelr::add_residuals(birthweight, bwt_aic) #residuals
+bwt_model = modelr::add_predictions(bwt_model, bwt_aic)
 
 bwt_model %>%
   ggplot(aes(x = pred, y = resid, color = resid)) +
-  geom_point(alpha = 0.5)
+  geom_point(alpha = 0.5) +
+  labs(x = "Predictions",
+       y = "Residuals",
+       title = "Predictions vs. Residuals")
 ```
 
 ### Comparing model to two others
@@ -84,16 +110,16 @@ Next, I produced RMSE density plots for each:
 cv = crossv_mc(birthweight, 100) 
 
 cv = cv %>% 
-  mutate(base  = map(train, ~lm(bwt ~ babysex + gaweeks + blength + mheight + smoken, data = .x)),
+  mutate(aic = map(train, ~lm(bwt ~ babysex + bhead + blength + delwt + fincome + gaweeks + mheight + mrace + parity + ppwt + smoken, data = .x)),
          model1  = map(train, ~lm(bwt ~ blength + gaweeks, data = .x)),
          model2  = map(train, ~lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + blength*blength*babysex, data = .x))
          ) %>% 
-  mutate(rmse_base = map2_dbl(base, test, ~rmse(model = .x, data = .y)),
+  mutate(rmse_aic = map2_dbl(aic, test, ~rmse(model = .x, data = .y)),
          rmse_1 = map2_dbl(model1, test, ~rmse(model = .x, data = .y)),
          rmse_2 = map2_dbl(model2, test, ~rmse(model = .x, data = .y)))
 
 cv %>% 
-  select(starts_with("rmse")) %>% 
+  dplyr::select(starts_with("rmse")) %>% 
   pivot_longer(
     everything(),
     names_to = "model", 
@@ -101,16 +127,23 @@ cv %>%
     names_prefix = "rmse_") %>% 
   mutate(model = fct_inorder(model)) %>% 
   ggplot(aes(x = model, y = rmse, color = model)) + 
-  geom_violin()
+  geom_violin() +
+  labs(x = "Model",
+       y = "Mean Squared Error Distribution",
+       title = "RMSE of Models")
 ```
 
-Based on the violin plot above, model 2 appears to be the best because its mean squared error (MSE) is lowest among the models. Model 2 is the model containing interaction terms.
+Based on the violin plot above, the model provided by stepwise selection (i.e. my "AIC" model) appears to be the best because its mean squared error (MSE) is lowest among the models.
+
+Selected model:
+
+y = $\beta_0$ + $\beta_1$ babysex + $\beta_2$ bhead + $\beta_3$ blength + $\beta_4$ delwt + $\beta_5$ fincome + $\beta_6$ gaweeks + $\beta_7$ meight + $\beta_8$ momage + $\beta_9$ mrace + $\beta_10$ parity + $\beta_11$ ppwt + $\beta_12$ smoken
 
 
 
 ### Problem 2
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 weather_df = 
   rnoaa::meteo_pull_monitors(
     c("USW00094728"),
@@ -121,7 +154,7 @@ weather_df =
     name = recode(id, USW00094728 = "CentralPark_NY"),
     tmin = tmin / 10,
     tmax = tmax / 10) %>%
-  select(name, id, everything())
+  dplyr::select(name, id, everything())
 ```
 
 
@@ -130,7 +163,7 @@ Simple linear regression with tmax as response, tmin as predictor.
   * Use 5000 bootstrap samples
   * Produce estimates of r^2 and log(β0∗β1) for each sample
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 set.seed(10)
 
 boot_fx = function(df) {
@@ -150,7 +183,7 @@ result_df = boot_df %>%
          results = map(model, broom::tidy)
   ) %>% 
   unnest(results) %>%
-  select(number, model:estimate) %>% 
+  dplyr::select(number, model:estimate) %>% 
   pivot_wider(
     names_from = term,
     values_from = estimate) %>%
@@ -162,27 +195,37 @@ r2_df = result_df %>%
   mutate(model_fit = map(model, broom::glance)) %>%
   unnest(model_fit) %>%
   janitor::clean_names() %>% 
-  select(number:r_squared)
+  dplyr::select(number:r_squared)
 ```
 
 Plots:
 ```{r plots, message=FALSE, warning=FALSE}
 result_df %>% 
   ggplot(aes(x = log_int_tmin)) +
-  geom_histogram()
+  geom_density() + 
+  labs(
+    x = "Log of Intercept*Beta1",
+    y = "Density",
+    title = "Distribution of Log(Intercept*Beta1) Across Samples"
+  )
+  
 
 r2_df %>%
   ggplot(aes(x = r_squared)) +
-  geom_histogram()
+  geom_density() +
+  labs(
+    x = "R-Squared",
+    y = "Density",
+    title = "Distribution of R-Squared Across Samples"
+  )
 ```
 
+The distribution of log of Intercept x Beta 1 Hat and $r^2$ look close to a normal distribution. The distribution of log of Intercept x Beta 1 Hat looks fairly normal but very slightly left-skewed. The $r^2$ distribution is slightly more left skewed. The difference may be because of a log transformation in the Intercept x Beta 1 Hat plot.
 
-Distributions normal
+The 95% confidence interval for the log data is (`r round(quantile(pull(result_df, log_int_tmin), probs = c(0.025,0.975)), digits = 2)`). The 95% confidence interval for the $r^2$ is (`r round(quantile(pull(result_df, log_int_tmin), probs = c(0.025,0.975)), digits = 2)`). Since the null value of zero is not within either CI, we are 95% confident that the true values for both lie in these ranges based on this sample. 
 
-Median log: `r round(quantile(pull(result_df, log_int_tmin), probs = 0.5), digits=2)`
+Other information:
 
-Median r2: `r round(mean(pull(r2_df, r_squared)), digits=2)`
+Log Median: `r round(quantile(pull(result_df, log_int_tmin), probs = 0.5), digits=2)`
 
-log CI: (`r round(quantile(pull(result_df, log_int_tmin), probs = c(0.025,0.975)), digits = 2)`)
-
-log r2: (`r round(quantile(pull(r2_df, r_squared), probs = c(0.025,0.975)), digits = 2)`)
+$r^2$ Median: `r round(mean(pull(r2_df, r_squared)), digits=2)`
